@@ -1,0 +1,13 @@
+# Binaries
+delete-forks
+*.exe
+
+# Test binary
+*.test
+
+# Go build cache
+*.out
+
+# OS files
+.DS_Store
+Thumbs.db
