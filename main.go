@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	gh "github.com/suheybbecerek/delete-forks/github"
-	"github.com/suheybbecerek/delete-forks/tui"
+	gh "github.com/rwxsb/delete-forks/github"
+	"github.com/rwxsb/delete-forks/tui"
 )
 
 func main() {

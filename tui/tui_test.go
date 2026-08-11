@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	gh "github.com/suheybbecerek/delete-forks/github"
+	gh "github.com/rwxsb/delete-forks/github"
 )
 
 func testModel(forks []gh.Repo) Model {

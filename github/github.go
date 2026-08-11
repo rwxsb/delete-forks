@@ -123,3 +123,46 @@ func (c *Client) DeleteRepo(owner, name string) error {
 	}
 	return nil
 }
+
+func (c *Client) FetchParent(forkFullName string) string {
+	out, err := exec.Command("gh", "api", "repos/"+forkFullName, "--jq", ".parent.full_name").Output()
+	if err != nil {
+		return ""
+	}
+	result := strings.TrimSpace(string(out))
+	if result == "null" {
+		return ""
+	}
+	return result
+}
+
+func (c *Client) GetPRCounts(forkFullName, parentFullName, username string) (upstream, origin int) {
+	// Open PRs on the fork itself
+	out, err := exec.Command("gh", "pr", "list", "--repo", forkFullName,
+		"--limit", "100",
+		"--json", "number").Output()
+	if err == nil {
+		var prs []json.RawMessage
+		if json.Unmarshal(out, &prs) == nil {
+			origin = len(prs)
+		}
+	}
+
+	// User's open PRs on the upstream repo
+	// Returns -1 if upstream is inaccessible (e.g. SAML-protected)
+	upstream = -1
+	if parentFullName != "" {
+		out, err = exec.Command("gh", "pr", "list", "--repo", parentFullName,
+			"--author", username,
+			"--limit", "100",
+			"--json", "number").Output()
+		if err == nil {
+			var prs []json.RawMessage
+			if json.Unmarshal(out, &prs) == nil {
+				upstream = len(prs)
+			}
+		}
+	}
+
+	return upstream, origin
+}

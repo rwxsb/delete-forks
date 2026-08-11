@@ -1,4 +1,4 @@
-module github.com/suheybbecerek/delete-forks
+module github.com/rwxsb/delete-forks
 
 go 1.26.1
 

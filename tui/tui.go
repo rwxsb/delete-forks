@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	gh "github.com/suheybbecerek/delete-forks/github"
+	gh "github.com/rwxsb/delete-forks/github"
 )
 
 // Styles
@@ -48,6 +48,10 @@ var (
 
 	failedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FF0000"))
+
+	prActiveStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFCC00")).
+			Bold(true)
 )
 
 // --- Messages ---
@@ -59,6 +63,12 @@ type forkDeletedMsg struct {
 	err   error
 }
 type allDeletedMsg struct{}
+type prCountsMsg struct {
+	index    int
+	upstream int
+	origin   int
+	parent   string
+}
 
 // --- Phase ---
 
@@ -84,9 +94,12 @@ const (
 )
 
 type forkItem struct {
-	repo  gh.Repo
-	state forkState
-	err   error
+	repo       gh.Repo
+	state      forkState
+	err        error
+	prUpstream int
+	prOrigin   int
+	prLoaded   bool
 }
 
 // --- Model ---
@@ -159,12 +172,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, f := range msg.forks {
 			m.forks[i] = forkItem{repo: f, state: forkPending}
 		}
-		return m, nil
+		return m, m.loadNextPRCount()
 
 	case forksErrorMsg:
 		m.err = msg.err
 		m.phase = phaseList
 		return m, nil
+
+	case prCountsMsg:
+		if msg.index >= 0 && msg.index < len(m.forks) {
+			m.forks[msg.index].prUpstream = msg.upstream
+			m.forks[msg.index].prOrigin = msg.origin
+			m.forks[msg.index].prLoaded = true
+			if msg.parent != "" && m.forks[msg.index].repo.Parent == nil {
+				m.forks[msg.index].repo.Parent = &struct {
+					FullName string `json:"nameWithOwner"`
+				}{FullName: msg.parent}
+			}
+		}
+		return m, m.loadNextPRCount()
 
 	case forkDeletedMsg:
 		if msg.err != nil {
@@ -251,6 +277,34 @@ func (m *Model) selectedIndices() []int {
 	return indices
 }
 
+func (m Model) loadPRCount(index int) tea.Cmd {
+	forkFullName := m.forks[index].repo.FullName
+	parentFullName := ""
+	if m.forks[index].repo.Parent != nil {
+		parentFullName = m.forks[index].repo.Parent.FullName
+	}
+	username := m.username
+	client := m.client
+	return func() tea.Msg {
+		fetchedParent := ""
+		if parentFullName == "" {
+			fetchedParent = client.FetchParent(forkFullName)
+			parentFullName = fetchedParent
+		}
+		upstream, origin := client.GetPRCounts(forkFullName, parentFullName, username)
+		return prCountsMsg{index: index, upstream: upstream, origin: origin, parent: fetchedParent}
+	}
+}
+
+func (m Model) loadNextPRCount() tea.Cmd {
+	for i, f := range m.forks {
+		if !f.prLoaded {
+			return m.loadPRCount(i)
+		}
+	}
+	return nil
+}
+
 func (m *Model) deleteNext() tea.Cmd {
 	indices := m.selectedIndices()
 	// find next pending
@@ -314,6 +368,7 @@ func (m Model) viewList() string {
 
 	sel := len(m.selectedIndices())
 	b.WriteString(statusBarStyle.Render(fmt.Sprintf("  %d selected", sel)))
+	b.WriteString(dimStyle.Render("  (▲ PRs to upstream • ▼ PRs on fork)"))
 	b.WriteString("\n\n")
 
 	// Scrolling viewport
@@ -353,7 +408,28 @@ func (m Model) viewList() string {
 			lang = dimStyle.Render(fmt.Sprintf(" [%s]", f.repo.Language.Name))
 		}
 
-		line := fmt.Sprintf("%s%s %s%s%s", cursor, check, name, parent, lang)
+		prInfo := ""
+		if f.prLoaded {
+			var parts []string
+			if f.repo.Parent != nil {
+				if f.prUpstream < 0 {
+					parts = append(parts, "▲?")
+				} else {
+					parts = append(parts, fmt.Sprintf("▲%d", f.prUpstream))
+				}
+			}
+			parts = append(parts, fmt.Sprintf("▼%d", f.prOrigin))
+			combined := " " + strings.Join(parts, " ")
+			if f.prUpstream > 0 || f.prOrigin > 0 {
+				prInfo = prActiveStyle.Render(combined)
+			} else if f.prUpstream < 0 {
+				prInfo = dimStyle.Render(combined)
+			} else {
+				prInfo = dimStyle.Render(combined)
+			}
+		}
+
+		line := fmt.Sprintf("%s%s %s%s%s%s", cursor, check, name, parent, lang, prInfo)
 		if m.cursor == i {
 			line = selectedStyle.Render(line)
 		} else {
